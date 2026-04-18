@@ -4,7 +4,7 @@ import CornerActions from "./CornerActions";
 export default function StartScreen() {
 	return (
 		<main className="menu-screen">
-			<CornerActions />
+			<CornerActions variant="start" />
 
 			<section className="menu-center-block start-center-block">
 				<h1 className="start-title">Game Ô Ăn Quan</h1>

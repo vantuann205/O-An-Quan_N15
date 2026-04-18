@@ -1,29 +1,45 @@
 "use client";
 
-import { CircleX, Settings } from "lucide-react";
+import { ArrowLeft, CircleX, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-export default function CornerActions() {
+export default function CornerActions({ variant = "mode" }) {
 	const router = useRouter();
 
-	const handleClose = () => {
+	const attemptExit = () => {
 		if (typeof window === "undefined") {
 			router.push("/");
 			return;
 		}
 
-		const canGoBack = window.history.length > 1;
+		// Try to close the current tab/window first.
+		window.open("", "_self");
 		window.close();
 
-		if (!window.closed) {
-			if (canGoBack) {
-				window.history.back();
-				return;
+		// If browser blocks close(), fall back to a blank page.
+		setTimeout(() => {
+			if (!window.closed) {
+				window.location.replace("about:blank");
 			}
-
-			router.push("/");
-		}
+		}, 80);
 	};
+
+	const handleClose = () => {
+		if (variant === "start") {
+			attemptExit();
+			return;
+		}
+
+		if (typeof window === "undefined") {
+			router.push("/");
+			return;
+		}
+
+		router.push("/");
+	};
+
+	const PrimaryIcon = variant === "start" ? CircleX : ArrowLeft;
+	const primaryLabel = variant === "start" ? "Đóng game" : "Quay lại";
 
 	return (
 		<>
@@ -33,11 +49,11 @@ export default function CornerActions() {
 
 			<button
 				type="button"
-				aria-label="Đóng"
+				aria-label={primaryLabel}
 				className="menu-corner menu-corner-right"
 				onClick={handleClose}
 			>
-				<CircleX size={60} strokeWidth={2.2} />
+				<PrimaryIcon size={60} strokeWidth={2.2} />
 			</button>
 		</>
 	);

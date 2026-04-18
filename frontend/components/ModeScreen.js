@@ -15,7 +15,7 @@ function ModeButton({ leftIcon: LeftIcon, rightIcon: RightIcon, label, href }) {
 export default function ModeScreen() {
 	return (
 		<main className="menu-screen">
-			<CornerActions />
+			<CornerActions variant="mode" />
 
 			<section className="menu-center-block mode-center-block">
 				<h1 className="mode-title">Chọn chế độ chơi</h1>

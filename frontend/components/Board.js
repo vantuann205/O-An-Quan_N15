@@ -19,7 +19,7 @@ const CAPTURE_ARC_SPLIT = 0.42;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export default function Board({ onScoresChange, onTurnChange, getScoreTargetPoint, getPickupTargetPoint, mode = "pve" }) {
+export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScoreTargetPoint, getPickupTargetPoint, mode = "pve" }) {
 	const [selectedSquare, setSelectedSquare] = useState(null);
 	const [gameState, setGameState] = useState(null);
 	const [displayPits, setDisplayPits] = useState([...INITIAL_PITS]);
@@ -58,6 +58,19 @@ export default function Board({ onScoresChange, onTurnChange, getScoreTargetPoin
 	useEffect(() => {
 		onTurnChange?.(activePlayer);
 	}, [activePlayer, onTurnChange]);
+
+	useEffect(() => {
+		if (!gameState || gameState.status !== "finished") return;
+
+		const topScore = gameState?.final_result?.top_score ?? gameState?.scores?.top ?? 0;
+		const bottomScore = gameState?.final_result?.bottom_score ?? gameState?.scores?.bottom ?? 0;
+
+		onGameEnd?.({
+			winner: gameState.winner,
+			topScore,
+			bottomScore,
+		});
+	}, [gameState, onGameEnd]);
 
 	useEffect(() => {
 		const createGame = async () => {
