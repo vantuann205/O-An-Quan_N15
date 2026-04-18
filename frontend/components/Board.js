@@ -8,15 +8,21 @@ const TOP_ROW_INDICES = [1, 2, 3, 4, 5];
 const BOTTOM_ROW_INDICES = [11, 10, 9, 8, 7];
 const INITIAL_PITS = [1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000";
+const PICKUP_DELAY_MS = 320;
+const SOW_DELAY_MS = 420;
+const CAPTURE_DELAY_MS = 260;
+const SOW_FLIGHT_MS = 620;
+const CAPTURE_FLIGHT_MS = 900;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export default function Board({ onScoresChange }) {
+export default function Board({ onScoresChange, mode = "pve" }) {
 	const [selectedSquare, setSelectedSquare] = useState(null);
 	const [gameState, setGameState] = useState(null);
 	const [displayPits, setDisplayPits] = useState([...INITIAL_PITS]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isAnimating, setIsAnimating] = useState(false);
+	const [isAiThinking, setIsAiThinking] = useState(false);
 	const [errorMessage, setErrorMessage] = useState("");
 	const [flyingPieces, setFlyingPieces] = useState([]);
 	const [recentPit, setRecentPit] = useState(null);
@@ -24,11 +30,12 @@ export default function Board({ onScoresChange }) {
 	const boardRef = useRef(null);
 	const pitRefs = useRef({});
 	const pieceIdRef = useRef(0);
+	const aiLockRef = useRef(false);
 
 	const pits = displayPits;
 	const scores = gameState?.scores || { top: 0, bottom: 0 };
 	const activePlayer = gameState?.current_player || "bottom";
-	const isBusy = isLoading || isAnimating;
+	const isBusy = isLoading || isAnimating || isAiThinking;
 
 	useEffect(() => {
 		onScoresChange?.(scores);
@@ -65,6 +72,49 @@ export default function Board({ onScoresChange }) {
 			setDisplayPits([...gameState.board]);
 		}
 	}, [gameState]);
+
+	useEffect(() => {
+		const runAiMove = async () => {
+			if (!gameState || mode !== "pve") return;
+			if (gameState.status !== "playing" || gameState.current_player !== "top") return;
+			if (isLoading || isAnimating) return;
+			if (aiLockRef.current) return;
+
+			aiLockRef.current = true;
+			setIsAiThinking(true);
+			setErrorMessage("");
+
+			try {
+				const response = await fetch(`${API_BASE}/api/ai-move`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						state: gameState,
+						difficulty: 2,
+					}),
+				});
+
+				const data = await response.json();
+				if (!response.ok) {
+					throw new Error(data?.error || "AI không thể đi");
+				}
+
+				if (typeof data?.pit === "number" && (data?.direction === 1 || data?.direction === -1)) {
+					const actions = buildMoveActions(gameState, data.pit, data.direction);
+					await animateMoveActions(actions, "top");
+				}
+
+				setGameState(data.state);
+			} catch (error) {
+				setErrorMessage(error.message || "Lỗi lượt đi của AI");
+			} finally {
+				setIsAiThinking(false);
+				aiLockRef.current = false;
+			}
+		};
+
+		runAiMove();
+	}, [gameState, mode, isLoading, isAnimating]);
 
 	const isQuanPit = (index) => index === 0 || index === 6;
 	const isTopPit = (index) => TOP_PITS.includes(index);
@@ -161,14 +211,91 @@ export default function Board({ onScoresChange }) {
 			);
 		});
 
-		const duration = type === "capture" ? 430 : 260;
+		const duration = type === "capture" ? CAPTURE_FLIGHT_MS : SOW_FLIGHT_MS;
 		setTimeout(() => {
 			setFlyingPieces((prev) => prev.filter((piece) => piece.id !== id));
 		}, duration + 40);
 	};
 
+	const buildMoveActions = (stateSnapshot, pit, direction) => {
+		if (!stateSnapshot?.board) return [];
+
+		const board = [...stateSnapshot.board];
+		const actions = [];
+		let pos = pit;
+		let stones = board[pos] || 0;
+
+		if (stones <= 0) return actions;
+
+		actions.push({ type: "pickup", pit: pos });
+		board[pos] = 0;
+
+		while (true) {
+			while (stones > 0) {
+				const from = pos;
+				pos = (pos + direction + 12) % 12;
+				board[pos] += 1;
+				stones -= 1;
+				actions.push({ type: "sow", from, to: pos });
+			}
+
+			let nextPos = (pos + direction + 12) % 12;
+			let nextNext = (pos + 2 * direction + 24) % 12;
+
+			if (board[nextPos] > 0 && nextPos !== 0 && nextPos !== 6) {
+				stones = board[nextPos];
+				actions.push({ type: "pickup", pit: nextPos });
+				board[nextPos] = 0;
+				pos = nextPos;
+				continue;
+			}
+
+			if (board[nextPos] === 0 && board[nextNext] > 0) {
+				while (board[nextPos] === 0 && board[nextNext] > 0) {
+					const captured = board[nextNext];
+					board[nextNext] = 0;
+					actions.push({ type: "capture", pit: nextNext, count: captured });
+					pos = nextNext;
+					nextPos = (pos + direction + 12) % 12;
+					nextNext = (pos + 2 * direction + 24) % 12;
+				}
+			}
+
+			break;
+		}
+
+		return actions;
+	};
+
+	const animateMoveActions = async (actions, owner) => {
+		for (const action of actions) {
+			if (action.type === "pickup") {
+				setPitCount(action.pit, 0);
+				await sleep(PICKUP_DELAY_MS);
+				continue;
+			}
+
+			if (action.type === "sow") {
+				launchFlight({ fromIndex: action.from, toIndex: action.to, owner, type: "sow" });
+				await sleep(SOW_DELAY_MS);
+				addPitCount(action.to, 1);
+				markRecentPit(action.to);
+				continue;
+			}
+
+			if (action.type === "capture") {
+				setPitCount(action.pit, 0);
+				for (let i = 0; i < action.count; i += 1) {
+					launchFlight({ fromIndex: action.pit, toIndex: "store", owner, type: "capture" });
+					await sleep(CAPTURE_DELAY_MS);
+				}
+			}
+		}
+	};
+
 	const handleSquareClick = (index) => {
 		if (isBusy || !gameState || gameState.status !== "playing" || isQuanPit(index)) return;
+		if (mode === "pve" && activePlayer === "top") return;
 
 		const canPick = activePlayer === "top" ? isTopPit(index) : isBottomPit(index);
 		if (!canPick || pits[index] <= 0) return;
@@ -187,17 +314,9 @@ export default function Board({ onScoresChange }) {
 		setIsAnimating(true);
 		setErrorMessage("");
 		setSelectedSquare(null);
-		setPitCount(index, 0);
 
-		let current = index;
-		for (let i = 0; i < stones; i += 1) {
-			const nextIndex = getNextIndex(current, step);
-			launchFlight({ fromIndex: current, toIndex: nextIndex, owner, type: "sow" });
-			await sleep(170);
-			addPitCount(nextIndex, 1);
-			markRecentPit(nextIndex);
-			current = nextIndex;
-		}
+		const actions = buildMoveActions(gameState, index, step);
+		await animateMoveActions(actions, owner);
 
 		try {
 			const response = await fetch(`${API_BASE}/api/move`, {
@@ -236,6 +355,7 @@ export default function Board({ onScoresChange }) {
 
 	const getStatusText = () => {
 		if (isLoading) return "Đang tạo ván mới...";
+		if (isAiThinking) return "Máy đang đi...";
 		if (!gameState) return "Chưa có dữ liệu ván";
 
 		if (gameState.status === "finished") {
@@ -419,7 +539,7 @@ export default function Board({ onScoresChange }) {
 							top: 0,
 							transform: piece.phase === "end" ? `translate(${piece.toX}px, ${piece.toY}px)` : `translate(${piece.x}px, ${piece.y}px)`,
 							transitionProperty: "transform, opacity",
-							transitionDuration: piece.type === "capture" ? "430ms" : "260ms",
+							transitionDuration: `${piece.type === "capture" ? CAPTURE_FLIGHT_MS : SOW_FLIGHT_MS}ms`,
 							transitionTimingFunction: piece.type === "capture" ? "cubic-bezier(0.2, 0.8, 0.2, 1)" : "linear",
 							opacity: piece.phase === "end" ? 0.75 : 1,
 						}}

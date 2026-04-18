@@ -30,7 +30,7 @@ export default function GameScreen({ mode = "pve" }) {
 
 			{/* Game Board */}
 			<div className="flex-1 flex items-center justify-center w-full z-10">
-				<Board onScoresChange={setScores} />
+				<Board mode={mode} onScoresChange={setScores} />
 			</div>
 
 			{/* Bottom Player Nametag */}
