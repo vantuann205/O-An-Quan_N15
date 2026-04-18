@@ -9,8 +9,9 @@ Endpoints:
   GET  /api/valid-moves         lấy danh sách nước đi hợp lệ
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template_string, send_from_directory
 from flask_cors import CORS
+import os
 
 from game_logic import make_state, apply_move, get_valid_moves
 from ai import get_ai_move
@@ -24,6 +25,15 @@ CORS(app)
 @app.get("/")
 def health_check():
     return jsonify({"message": "Backend Flask dang chay tren cong 5000"})
+
+
+# ─── Game UI (test page) ─────────────────────────────────────────────────────
+
+@app.get("/play")
+def play():
+    html_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    with open(html_path, encoding="utf-8") as f:
+        return f.read()
 
 
 # ─── Tạo game mới ────────────────────────────────────────────────────────────
@@ -77,22 +87,27 @@ def make_move():
 @app.post("/api/ai-move")
 def ai_move():
     """
-    Body: { "state": <game_state>, "depth": <int, optional> }
-    Trả về: { "pit": int, "direction": int, "state": <new_state> }
+    Body: {
+      "state": <game_state>,
+      "difficulty": <1|2|3, optional, default=3>,
+      "depth": <int, optional, ghi de depth mac dinh>
+    }
+    Tra ve: { "pit": int, "direction": int, "state": <new_state> }
     """
-    data  = request.get_json(silent=True) or {}
-    state = data.get("state")
-    depth = data.get("depth", 4)
+    data       = request.get_json(silent=True) or {}
+    state      = data.get("state")
+    difficulty = data.get("difficulty", 3)
+    depth      = data.get("depth", None)
 
     if state is None:
-        return jsonify({"error": "Thiếu state"}), 400
+        return jsonify({"error": "Thieu state"}), 400
 
     if state.get("status") == "finished":
-        return jsonify({"error": "Game đã kết thúc"}), 400
+        return jsonify({"error": "Game da ket thuc"}), 400
 
-    move = get_ai_move(state, depth=depth)
+    move = get_ai_move(state, difficulty=difficulty, depth=depth)
     if move is None:
-        return jsonify({"error": "Không có nước đi hợp lệ"}), 400
+        return jsonify({"error": "Khong co nuoc di hop le"}), 400
 
     pit, direction = move
     new_state = apply_move(state, pit, direction)

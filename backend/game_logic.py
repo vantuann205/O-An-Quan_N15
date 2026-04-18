@@ -1,68 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-game_logic.py - Engine game O An Quan
-======================================
-Bo cuc ban (12 o, index 0-11):
-  index 0  : o Quan TRAI  (chu so huu: top)
-  index 1-5: 5 o dan hang TREN (player top)
-  index 6  : o Quan PHAI  (chu so huu: bottom)
-  index 7-11: 5 o dan hang DUOI (player bottom)
+game_logic.py - Logic game O An Quan
+Logic lay nguyen tu file goc, chi chuyen sang dang state-based (khong dung global).
 
-Chieu di vong: 0->1->...->11->0 (CW, direction=+1)
-               0->11->...->1->0 (CCW, direction=-1)
-
-Luat diem:
-  - Moi quan dan  = 1 diem
-  - Moi quan quan = 5 diem
-
-Trang thai ban dau:
-  - Moi o dan: 5 quan dan
-  - Moi o Quan: 1 quan quan
-
-Luat choi (theo tai lieu):
-  1. Chon 1 o dan ben minh co quan, chon chieu.
-  2. Boc toan bo quan, rai tung quan mot theo chieu.
-  3. Sau khi rai het quan:
-       a) O ke tiep co quan (bat ke o dan hay o Quan):
-            boc len rai tiep (lien hoan rai).
-       b) O ke tiep trong:
-            -> Kiem tra an: o sau o trong co quan (va khong phai Quan non)
-               thi an, roi tiep tuc kiem tra.
-            -> O sau cung trong HOAC la o Quan: mat luot.
-  4. Quan non: o Quan co < 5 quan -> KHONG duoc an o Quan do.
-  5. Muon quan: khi den luot ma ca 5 o dan deu trong:
-       - Lay 5 quan tu kho cua chinh minh, chia moi o 1 quan.
-       - Neu kho < 5: vay them tu kho doi thu (ghi no).
-       - Neu tong cong van < 5: xu thua (game ket thuc).
-  6. Ket thuc: khi CA HAI o Quan deu het quan (== 0).
-       - Thu het quan dan con lai cua ca 2 ben vao kho tuong ung.
-       - Tinh diem, tru no, xac dinh winner.
+Board layout (index 0-11):
+  0      : o Quan trai  (player "top")
+  1-5    : o dan player "top"
+  6      : o Quan phai  (player "bottom")
+  7-11   : o dan player "bottom"
 """
 
 import copy
 
-# --- Hang so -------------------------------------------------------------------
-
-NUM_PITS           = 12
-QUAN_INDICES       = {0, 6}
-TOP_PITS           = list(range(1, 6))
-BOTTOM_PITS        = list(range(7, 12))
-
-INITIAL_STONES     = 5   # quan dan moi o dan ban dau
-INITIAL_QUAN_COUNT = 1   # so quan quan trong moi o Quan ban dau
-QUAN_POINT_VALUE   = 5   # 1 quan quan = 5 diem
-QUAN_NON_THRESHOLD = 5   # o Quan co < 5 quan -> quan non, khong duoc an
-REFILL_COUNT       = 5   # so quan can de rai lai khi het o dan
+NUM_PITS    = 12
+QUAN_PITS   = (0, 6)
+TOP_PITS    = list(range(1, 6))
+BOTTOM_PITS = list(range(7, 12))
 
 
-# --- Khoi tao ------------------------------------------------------------------
+# ─── Khoi tao ────────────────────────────────────────────────────────────────
 
 def make_board():
     board = [0] * NUM_PITS
-    board[0] = INITIAL_QUAN_COUNT
-    board[6] = INITIAL_QUAN_COUNT
-    for i in TOP_PITS + BOTTOM_PITS:
-        board[i] = INITIAL_STONES
+    board[0] = board[6] = 5
+    for i in range(1, 6):
+        board[i] = 5
+    for i in range(7, 12):
+        board[i] = 5
     return board
 
 
@@ -71,13 +35,13 @@ def make_state(first_player="bottom"):
         "board":          make_board(),
         "scores":         {"top": 0, "bottom": 0},
         "current_player": first_player,
-        "status":         "playing",   # "playing" | "finished"
+        "status":         "playing",
         "winner":         None,
-        "debt":           {"top": 0, "bottom": 0},  # no muon quan
+        "move_log":       [],
     }
 
 
-# --- Tien ich ------------------------------------------------------------------
+# ─── Tien ich ────────────────────────────────────────────────────────────────
 
 def get_player_pits(player):
     return TOP_PITS if player == "top" else BOTTOM_PITS
@@ -87,330 +51,154 @@ def opponent(player):
     return "bottom" if player == "top" else "top"
 
 
-def next_index(idx, direction):
-    return (idx + direction) % NUM_PITS
-
-
-def is_quan(idx):
-    return idx in QUAN_INDICES
-
-
-def point_value(idx, count):
-    """Gia tri diem khi an 'count' quan tu o idx."""
-    if is_quan(idx):
-        return count * QUAN_POINT_VALUE
-    return count
-
-
-def is_quan_non(board, idx):
-    """
-    Kiem tra o Quan co phai 'quan non' khong.
-    Quan non: o Quan co so quan < QUAN_NON_THRESHOLD (< 5).
-    """
-    return is_quan(idx) and board[idx] < QUAN_NON_THRESHOLD
-
-
-def both_quan_empty(board):
-    """Kiem tra ca 2 o Quan deu het quan -> dieu kien ket thuc game."""
+def is_game_over(board):
     return board[0] == 0 and board[6] == 0
 
 
-# --- Nuoc di hop le ------------------------------------------------------------
-
 def get_valid_moves(state):
-    """
-    Tra ve [(pit_index, direction), ...]
-    Chi o dan cua nguoi choi hien tai co quan moi duoc chon.
-    """
-    player = state["current_player"]
     board  = state["board"]
+    player = state["current_player"]
     moves  = []
-    for pit in get_player_pits(player):
-        if board[pit] > 0:
-            moves.append((pit, 1))
-            moves.append((pit, -1))
+    for i in get_player_pits(player):
+        if board[i] > 0:
+            moves.append((i, 1))
+            moves.append((i, -1))
     return moves
 
 
-# --- Rai quan ------------------------------------------------------------------
+# ─── Move logic (y het logic goc) ────────────────────────────────────────────
 
-def sow(board, start, direction):
+def _do_move(board, scores, pos, direction, player):
     """
-    Boc toan bo quan o 'start', rai tung quan mot theo direction.
-    Tra ve (board_moi, last_index) - o cuoi cung nhan quan.
-    O xuat phat bi bo qua neu di vong qua no.
+    Thuc hien nuoc di tren board (in-place).
+    Logic copy nguyen van tu ham move() trong file goc.
     """
-    board  = list(board)
-    stones = board[start]
-    board[start] = 0
-    current = start
-    while stones > 0:
-        current = next_index(current, direction)
-        if current == start:
-            current = next_index(current, direction)
-        board[current] += 1
-        stones -= 1
-    return board, current
-
-
-# --- An quan (lien hoan) -------------------------------------------------------
-
-def capture(board, scores, last, direction, player):
-    """
-    Sau khi rai xong tai 'last', kiem tra va an quan lien hoan.
-
-    Quy tac (theo tai lieu):
-      gap    = o ke tiep sau last
-      target = o ke tiep sau gap
-
-      - board[gap] == 0:
-          + target co quan VA khong phai quan non:
-              an het target, tiep tuc tu target.
-          + target trong HOAC la quan non: DUNG (mat luot).
-      - board[gap] > 0: DUNG (mat luot).
-
-    Luu y: KHONG an o Quan neu o do la quan non (< 5 quan).
-
-    Tra ve (board_moi, scores_moi, total_points_gained).
-    """
-    board  = list(board)
-    scores = dict(scores)
-    total  = 0
+    stones = board[pos]
+    board[pos] = 0
 
     while True:
-        gap    = next_index(last, direction)
-        target = next_index(gap, direction)
+        # Rai het stones
+        while stones > 0:
+            pos = (pos + direction) % 12
+            board[pos] += 1
+            stones -= 1
 
-        if board[gap] != 0:
-            break   # o ke co quan -> dung
+        next_pos  = (pos + direction) % 12
+        next_next = (pos + 2 * direction) % 12
 
-        if board[target] == 0:
-            break   # o sau trong -> dung
+        # Lien hoan rai: o ke tiep co quan va khong phai o Quan
+        if board[next_pos] > 0 and next_pos not in (0, 6):
+            stones = board[next_pos]
+            board[next_pos] = 0
+            pos = next_pos
+            continue
 
-        if is_quan_non(board, target):
-            break   # quan non -> khong duoc an, dung
+        # An quan lien hoan
+        if board[next_pos] == 0 and board[next_next] > 0:
+            while board[next_pos] == 0 and board[next_next] > 0:
+                eaten = board[next_next]
+                scores[player] += eaten
+                board[next_next] = 0
+                pos       = next_next
+                next_pos  = (pos + direction) % 12
+                next_next = (pos + 2 * direction) % 12
 
-        # An target
-        gained_pieces  = board[target]
-        gained_points  = point_value(target, gained_pieces)
-        board[target]  = 0
-        scores[player] += gained_points
-        total          += gained_points
-        last = target
-
-    return board, scores, total
-
-
-# --- Muon quan (het o dan) -----------------------------------------------------
-
-def handle_refill(board, scores, debt, player):
-    """
-    Khi den luot ma ca 5 o dan cua player deu trong:
-      - Can REFILL_COUNT (5) quan de rai lai.
-      - Lay tu kho cua chinh minh truoc.
-      - Neu kho chinh minh khong du, vay them tu kho doi thu (ghi no).
-      - Neu tong cong van < 5: tra ve can_continue=False (xu thua).
-
-    Tra ve (board_moi, scores_moi, debt_moi, can_continue).
-    """
-    board  = list(board)
-    scores = dict(scores)
-    debt   = dict(debt)
-
-    pits = get_player_pits(player)
-    opp  = opponent(player)
-
-    # Kiem tra co thuc su het o dan khong
-    if any(board[p] > 0 for p in pits):
-        return board, scores, debt, True   # van con quan, khong can muon
-
-    needed = REFILL_COUNT
-    taken  = 0
-
-    # Lay tu kho chinh minh
-    from_self = min(needed, scores[player])
-    scores[player] -= from_self
-    taken += from_self
-
-    # Neu van thieu, vay tu kho doi thu
-    if taken < needed:
-        from_opp = min(needed - taken, scores[opp])
-        scores[opp] -= from_opp
-        debt[player] += from_opp
-        taken += from_opp
-
-    if taken < needed:
-        # Khong du quan de tiep tuc -> xu thua
-        return board, scores, debt, False
-
-    # Rai lai: moi o 1 quan
-    for p in pits:
-        board[p] = 1
-
-    return board, scores, debt, True
+        break
 
 
-# --- Ap dung nuoc di hoan chinh ------------------------------------------------
+def _check_empty_side(board, player):
+    return all(board[i] == 0 for i in get_player_pits(player))
+
+
+def _refill(board, scores, player):
+    """Rai lai khi het quan, tru 5 diem (y het logic goc)."""
+    for i in get_player_pits(player):
+        board[i] = 1
+    scores[player] -= 5
+
+
+def _final_score(board, scores):
+    """Thu het quan dan con lai vao kho (y het logic goc)."""
+    for i in range(1, 6):
+        scores["top"] += board[i]
+        board[i] = 0
+    for i in range(7, 12):
+        scores["bottom"] += board[i]
+        board[i] = 0
+
+
+# ─── Apply move (state-based wrapper) ────────────────────────────────────────
 
 def apply_move(state, pit, direction):
     """
-    Thuc hien mot nuoc di hoan chinh theo dung luat:
-      1. Rai lien hoan (o ke tiep co quan -> boc rai tiep, ke ca o Quan)
-      2. An quan lien hoan (khong an quan non)
-      3. Kiem tra ket thuc (ca 2 o Quan het quan)
-      4. Xu ly muon quan neu den luot ma het o dan
-      5. Chuyen luot
-
-    Tra ve state moi.
+    Ap dung nuoc di, tra ve state moi.
+    Thu tu:
+      1. Thuc hien nuoc di (rai + an).
+      2. Kiem tra ket thuc game.
+      3. Xu ly het o dan cua doi thu (refill).
+      4. Chuyen luot.
     """
     state    = copy.deepcopy(state)
     board    = state["board"]
     scores   = state["scores"]
     player   = state["current_player"]
-    debt     = state["debt"]
+    move_log = state["move_log"]
 
-    # --- Buoc 1: Rai lien hoan ------------------------------------------------
-    # Luat: sau khi rai xong, neu o ke tiep (next sau last) co quan -> boc o do rai tiep
-    current_pit = pit
-    while True:
-        board, last = sow(board, current_pit, direction)
-        nxt = next_index(last, direction)
+    # 1. Thuc hien nuoc di
+    _do_move(board, scores, pit, direction, player)
 
-        # O ke tiep co quan -> boc o ke tiep do len rai tiep
-        if board[nxt] > 0:
-            current_pit = nxt
-            continue
+    # Ghi log
+    state["move_log"] = move_log + [{
+        "turn":      len(move_log) + 1,
+        "player":    player,
+        "pit":       pit,
+        "direction": direction,
+        "board":     list(board),
+        "scores":    dict(scores),
+    }]
 
-        # O ke tiep trong -> dung rai
-        break
+    # 2. Kiem tra ket thuc
+    if is_game_over(board):
+        _final_score(board, scores)
+        return _finalize(state)
 
-    # --- Buoc 2: An quan lien hoan --------------------------------------------
-    board, scores, _ = capture(board, scores, last, direction, player)
-
-    # --- Buoc 3: Kiem tra ket thuc (ca 2 o Quan het) -------------------------
-    state["board"]  = board
-    state["scores"] = scores
-    state["debt"]   = debt
-
-    if both_quan_empty(board):
-        board, scores = collect_remaining(board, scores, "top")
-        board, scores = collect_remaining(board, scores, "bottom")
-        state["board"]  = board
-        state["scores"] = scores
-        return finalize(state)
-
-    # --- Buoc 4 & 5: Chuyen luot, xu ly muon quan ----------------------------
+    # 3. Chuyen luot + xu ly het o dan
     next_player = opponent(player)
 
-    # Kiem tra doi thu co can muon quan khong
-    next_pits = get_player_pits(next_player)
-    if all(board[p] == 0 for p in next_pits):
-        board, scores, debt, can_continue = handle_refill(board, scores, debt, next_player)
-        state["board"]  = board
-        state["scores"] = scores
-        state["debt"]   = debt
+    if _check_empty_side(board, next_player):
+        _refill(board, scores, next_player)
 
-        if not can_continue:
-            # Doi thu khong du quan -> xu thua
-            state = finalize(state)
-            state["winner"] = player   # nguoi hien tai thang
-            return state
-
+    # Neu van khong co nuoc di -> ket thuc
     state["current_player"] = next_player
+    if not get_valid_moves(state):
+        _final_score(board, scores)
+        return _finalize(state)
+
     return state
 
 
-# --- Thu het quan dan con lai --------------------------------------------------
+# ─── Finalize ────────────────────────────────────────────────────────────────
 
-def collect_remaining(board, scores, player):
-    """Thu tat ca quan dan con lai cua player vao kho (1 diem/quan)."""
-    board  = list(board)
-    scores = dict(scores)
-    for pit in get_player_pits(player):
-        scores[player] += board[pit]
-        board[pit] = 0
-    return board, scores
-
-
-# --- Tinh diem cuoi & xac dinh winner -----------------------------------------
-
-def finalize(state):
-    """
-    Ket thuc game:
-      - Cong quan Quan con tren ban vao kho chu so huu (x QUAN_POINT_VALUE)
-      - Tru no muon (debt)
-      - Xac dinh winner
-    """
-    state  = copy.deepcopy(state)
-    board  = state["board"]
+def _finalize(state):
     scores = state["scores"]
-    debt   = state["debt"]
-
-    # Cong quan Quan con tren ban
-    scores["top"]    += board[0] * QUAN_POINT_VALUE
-    scores["bottom"] += board[6] * QUAN_POINT_VALUE
-    board[0] = 0
-    board[6] = 0
-
-    # Tru no muon
-    for p in ("top", "bottom"):
-        scores[p] = max(0, scores[p] - debt[p])
-
-    state["board"]  = board
-    state["scores"] = scores
     state["status"] = "finished"
-
-    if state.get("winner") is None:
-        if scores["top"] > scores["bottom"]:
-            state["winner"] = "top"
-        elif scores["bottom"] > scores["top"]:
-            state["winner"] = "bottom"
-        else:
-            state["winner"] = "draw"
-
+    if scores["top"] > scores["bottom"]:
+        state["winner"] = "top"
+    elif scores["bottom"] > scores["top"]:
+        state["winner"] = "bottom"
+    else:
+        state["winner"] = "draw"
     return state
 
 
-# --- Heuristic cho AI ----------------------------------------------------------
+# ─── Evaluate (cho AI) ───────────────────────────────────────────────────────
 
 def evaluate(state, ai_player):
     """
-    Ham danh gia h(x) cho Minimax.
-    Duong = tot cho ai_player, am = tot cho doi thu.
+    Ham danh gia tuong duong evaluate() goc:
+      goc: return player2_score - player1_score  (player2 = AI = "bottom")
+    O day: return scores[ai_player] - scores[opponent]
     """
-    if state["status"] == "finished":
-        s    = state["scores"]
-        diff = s[ai_player] - s[opponent(ai_player)]
-        if diff > 0:  return 100000
-        if diff < 0:  return -100000
-        return 0
-
-    board  = state["board"]
     scores = state["scores"]
     opp    = opponent(ai_player)
-
-    # 1. Chenh lech kho
-    score_diff = (scores[ai_player] - scores[opp]) * 10
-
-    # 2. Quan dan tren ban
-    my_pits  = sum(board[i] for i in get_player_pits(ai_player))
-    opp_pits = sum(board[i] for i in get_player_pits(opp))
-    pit_diff = (my_pits - opp_pits) * 2
-
-    # 3. Ap luc len o Quan doi thu (chi co gia tri khi Quan >= QUAN_NON_THRESHOLD)
-    opp_quan_idx = 0 if opp == "top" else 6
-    my_quan_idx  = 6 if opp == "top" else 0
-    opp_quan_val = board[opp_quan_idx]
-    # Khuyen khich tan cong khi Quan doi thu >= 5 (co the an)
-    if opp_quan_val >= QUAN_NON_THRESHOLD:
-        quan_pressure = opp_quan_val * 3
-    else:
-        quan_pressure = 0
-    quan_protect = board[my_quan_idx] * 4
-
-    # 4. Mobility
-    my_moves  = len(get_valid_moves(state))
-    opp_moves = len(get_valid_moves({**state, "current_player": opp}))
-    mobility  = (my_moves - opp_moves) * 1
-
-    return score_diff + pit_diff + quan_pressure - quan_protect + mobility
+    return scores[ai_player] - scores[opp]
