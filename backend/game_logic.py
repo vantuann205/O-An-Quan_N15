@@ -98,6 +98,11 @@ def _do_move(board, scores, big_piece_eaten, pos, direction, player):
         # An quan lien hoan
         if board[next_pos] == 0 and board[next_next] > 0:
             while board[next_pos] == 0 and board[next_next] > 0:
+                # Luat "Quan non": Neu o quan (0 hoac 6) con Quan va co < 5 quan dan, khong duoc an
+                if next_next in (0, 6) and not big_piece_eaten[str(next_next)]:
+                    if board[next_next] < 10:  # 1 Quan (5 pts) + 5 dan (5 pts) = 10
+                        break
+
                 eaten = board[next_next]
                 scores[player] += eaten
                 board[next_next] = 0

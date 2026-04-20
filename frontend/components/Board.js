@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useSound } from "./SoundContext";
 
 const TOP_PITS = [1, 2, 3, 4, 5];
 const BOTTOM_PITS = [7, 8, 9, 10, 11];
@@ -15,11 +16,12 @@ const PICKUP_FLIGHT_MS = 300;
 const PICKUP_STAGGER_MS = 32;
 const SOW_FLIGHT_MS = 620;
 const CAPTURE_FLIGHT_MS = 900;
-const CAPTURE_ARC_SPLIT = 0.42;
+const CAPTURE_ARC_SPLIT = 0.5;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScoreTargetPoint, getPickupTargetPoint, mode = "pve" }) {
+	const { playSound } = useSound();
 	const [selectedSquare, setSelectedSquare] = useState(null);
 	const [gameState, setGameState] = useState(null);
 	const [displayPits, setDisplayPits] = useState([...INITIAL_PITS]);
@@ -340,6 +342,7 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 		if (!stateSnapshot?.board) return [];
 
 		const board = [...stateSnapshot.board];
+		const bigPieceEaten = { ...(stateSnapshot.big_piece_eaten || { "0": false, "6": false }) };
 		const actions = [];
 		let pos = pit;
 		let stones = board[pos] || 0;
@@ -371,9 +374,18 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 
 			if (board[nextPos] === 0 && board[nextNext] > 0) {
 				while (board[nextPos] === 0 && board[nextNext] > 0) {
+					// Match backend "quan non" rule: a quan pit cannot be captured
+					// until its big piece has been eaten and value reaches threshold.
+					if ((nextNext === 0 || nextNext === 6) && !bigPieceEaten[String(nextNext)] && board[nextNext] < 10) {
+						break;
+					}
+
 					const captured = board[nextNext];
 					board[nextNext] = 0;
 					actions.push({ type: "capture", pit: nextNext, count: captured });
+					if (nextNext === 0 || nextNext === 6) {
+						bigPieceEaten[String(nextNext)] = true;
+					}
 					pos = nextNext;
 					nextPos = (pos + direction + 12) % 12;
 					nextNext = (pos + 2 * direction + 24) % 12;
@@ -396,6 +408,7 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 				carriedCount = action.count || 0;
 				setHeldStones({ owner, count: carriedCount, x: pickupPoint.x, y: pickupPoint.y });
 				setPitCount(action.pit, 0);
+				playSound("pickup");
 				for (let i = 0; i < visualCount; i += 1) {
 					setTimeout(() => {
 						launchFlight({ fromIndex: action.pit, toIndex: "pickup", owner, type: "pickup" });
@@ -416,6 +429,7 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 				}
 
 				launchFlight({ fromIndex: action.from, toIndex: action.to, owner, type: "sow" });
+				playSound("sow");
 				await sleep(SOW_DELAY_MS);
 				addPitCount(action.to, 1);
 				markRecentPit(action.to);
@@ -425,6 +439,7 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 			if (action.type === "capture") {
 				setHeldStones(null);
 				setPitCount(action.pit, 0);
+				playSound("capture");
 				for (let i = 0; i < action.count; i += 1) {
 					launchFlight({ fromIndex: action.pit, toIndex: "store", owner, type: "capture" });
 					await sleep(CAPTURE_DELAY_MS);
@@ -442,6 +457,7 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 		const canPick = activePlayer === "top" ? isTopPit(index) : isBottomPit(index);
 		if (!canPick || pits[index] <= 0) return;
 
+		playSound("click");
 		setSelectedSquare((prev) => (prev === index ? null : index));
 	};
 
@@ -677,8 +693,6 @@ export default function Board({ onScoresChange, onTurnChange, onGameEnd, getScor
 						}}
 					>
 						<div className={`relative rounded-full border shadow-md px-3 py-2 min-w-[54px] text-center ${heldStones.owner === "top" ? "bg-blue-500/95 border-blue-300 text-white" : "bg-rose-500/95 border-rose-300 text-white"}`}>
-							<div className="absolute -top-2 -left-2 w-3 h-3 rounded-full bg-white/85" />
-							<div className="absolute -top-1 right-0 w-2.5 h-2.5 rounded-full bg-white/70" />
 							<span className="text-sm font-semibold leading-none">{heldStones.count}</span>
 						</div>
 					</div>

@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { Settings, UserRound, Bot, CircleX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Board from "./Board";
+import SettingsModal from "./SettingsModal";
 
 export default function GameScreen({ mode = "pve" }) {
 	const router = useRouter();
@@ -13,6 +14,7 @@ export default function GameScreen({ mode = "pve" }) {
 	const [activePlayer, setActivePlayer] = useState("bottom");
 	const [boardSeed, setBoardSeed] = useState(0);
 	const [gameResult, setGameResult] = useState(null);
+	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 	const topScoreRef = useRef(null);
 	const bottomScoreRef = useRef(null);
 	const topPlayerRef = useRef(null);
@@ -91,7 +93,12 @@ export default function GameScreen({ mode = "pve" }) {
 	return (
 		<main className="min-h-screen relative flex flex-col items-center justify-between pb-12 pt-8 bg-zinc-100 text-zinc-900">
 			{/* Mảng UI Top Left - Settings */}
-			<button type="button" aria-label="Cài đặt" className="absolute top-6 left-6 text-zinc-900 hover:text-black hover:opacity-80 transition-all">
+			<button
+				type="button"
+				aria-label="Cài đặt"
+				onClick={() => setIsSettingsOpen(true)}
+				className="absolute top-6 left-6 text-zinc-900 hover:text-black hover:opacity-80 transition-all"
+			>
 				<Settings size={52} strokeWidth={2.2} />
 			</button>
 
@@ -134,7 +141,12 @@ export default function GameScreen({ mode = "pve" }) {
 
 			{gameResult && (
 				<div className="fixed inset-0 z-[120] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(217,219,224,0.96))] backdrop-blur-md px-6 py-5 sm:px-10 sm:py-8">
-					<button type="button" aria-label="Cài đặt" className="absolute top-5 left-5 text-zinc-900 hover:scale-105 transition-transform">
+					<button
+						type="button"
+						aria-label="Cài đặt"
+						onClick={() => setIsSettingsOpen(true)}
+						className="absolute top-5 left-5 text-zinc-900 hover:scale-105 transition-transform"
+					>
 						<Settings size={56} strokeWidth={2.2} />
 					</button>
 					<button type="button" aria-label="Đóng" className="absolute top-5 right-5 text-zinc-900 hover:scale-105 transition-transform" onClick={() => router.push("/")}>
@@ -185,6 +197,8 @@ export default function GameScreen({ mode = "pve" }) {
 					</div>
 				</div>
 			)}
+
+			<SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 		</main>
 	);
 }

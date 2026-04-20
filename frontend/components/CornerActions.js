@@ -1,10 +1,13 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { ArrowLeft, CircleX, Settings } from "lucide-react";
 import { useRouter } from "next/navigation";
+import SettingsModal from "./SettingsModal";
 
 export default function CornerActions({ variant = "mode" }) {
 	const router = useRouter();
+	const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
 	const attemptExit = () => {
 		if (typeof window === "undefined") {
@@ -43,7 +46,12 @@ export default function CornerActions({ variant = "mode" }) {
 
 	return (
 		<>
-			<button type="button" aria-label="Cài đặt" className="menu-corner menu-corner-left">
+			<button
+				type="button"
+				aria-label="Cài đặt"
+				className="menu-corner menu-corner-left"
+				onClick={() => setIsSettingsOpen(true)}
+			>
 				<Settings size={60} strokeWidth={2.2} />
 			</button>
 
@@ -55,6 +63,8 @@ export default function CornerActions({ variant = "mode" }) {
 			>
 				<PrimaryIcon size={60} strokeWidth={2.2} />
 			</button>
+
+			<SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 		</>
 	);
 }
