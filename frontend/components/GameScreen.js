@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Settings, UserRound, Bot } from "lucide-react";
 import { Settings, UserRound, Bot, CircleX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Board from "./Board";
