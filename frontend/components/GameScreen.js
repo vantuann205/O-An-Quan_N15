@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { Settings, UserRound, Bot, CircleX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Board from "./Board";
@@ -22,6 +22,9 @@ export default function GameScreen({ mode = "pve" }) {
 	const bottomScoreRef = useRef(null);
 	const topPlayerRef = useRef(null);
 	const bottomPlayerRef = useRef(null);
+	const [timeLeft, setTimeLeft] = useState(60);
+	const [isBoardBusy, setIsBoardBusy] = useState(false);
+	const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:5000";
 
 	const topIsActive = activePlayer === "top";
 	const bottomIsActive = activePlayer === "bottom";
@@ -31,6 +34,61 @@ export default function GameScreen({ mode = "pve" }) {
 	const bottomBadgeClass = bottomIsActive
 		? "bg-[#ef5350] text-white border-rose-400 shadow-rose-200/60"
 		: "bg-white text-zinc-900 border-zinc-300";
+
+	// Timer logic
+	useEffect(() => {
+		if (gameResult || isBoardBusy || isSettingsOpen) return;
+
+		const timer = setInterval(() => {
+			setTimeLeft((prev) => {
+				if (prev <= 1) {
+					handleTimeout();
+					return 0;
+				}
+				return prev - 1;
+			});
+		}, 1000);
+
+		return () => clearInterval(timer);
+	}, [gameResult, isBoardBusy, activePlayer, isSettingsOpen]);
+
+	useEffect(() => {
+		// Reset timer when turn changes
+		setTimeLeft(60);
+	}, [activePlayer]);
+
+	const handleTimeout = async () => {
+		if (gameResult) return;
+		
+		// Attempt to get bridge to Board component's state
+		// We'll need to fetch the penalty from backend
+		try {
+			// This is tricky because we need the current state from the Board
+			// Actually, the Board component should probably handle the penalty call
+			// Or we pass a signal to it.
+			// Let's assume we can trigger it here if we had the state.
+			// Better: Let's make Board's setGameState accessible.
+			
+			// We need a way to get the current state.
+			// For now, let's assume we can trigger it in Board or just call API if we had the state.
+			// Since GameScreen doesn't have the full state (Board does), 
+			// let's add a `triggerPenalty` method to Board.
+			
+			const response = await fetch(`${API_BASE}/api/penalty`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					state: boardRef.current?.getGameState?.() || {} 
+				}),
+			});
+			const data = await response.json();
+			if (response.ok) {
+				boardRef.current?.setGameState?.(data);
+			}
+		} catch (error) {
+			console.error("Penalty failed:", error);
+		}
+	};
 
 	const getScoreTargetPoint = useCallback((owner) => {
 		const targetRef = owner === "top" ? topScoreRef.current : bottomScoreRef.current;
@@ -124,7 +182,13 @@ export default function GameScreen({ mode = "pve" }) {
 			</div>
 
 			{/* Top Player Nametag */}
-			<div ref={topPlayerRef} className={`flex rounded-2xl px-8 py-3 items-center gap-4 shadow-sm border w-auto min-w-[240px] justify-center mt-2 z-10 transition-colors ${topBadgeClass}`}>
+			<div ref={topPlayerRef} className={`relative flex rounded-2xl px-8 py-3 items-center gap-4 shadow-sm border w-auto min-w-[240px] justify-center mt-2 z-10 transition-colors ${topBadgeClass}`}>
+				{topIsActive && !gameResult && (
+					<div 
+						className="timer-ring-container" 
+						style={{ "--timer-percent": (timeLeft / 60) * 100 }} 
+					/>
+				)}
 				{topPlayerIcon}
 				<span className="text-3xl font-semibold">{topPlayerName}</span>
 			</div>
@@ -137,6 +201,7 @@ export default function GameScreen({ mode = "pve" }) {
 					mode={mode}
 					onScoresChange={setScores}
 					onTurnChange={setActivePlayer}
+					onBusyChange={setIsBoardBusy}
 					onGameEnd={handleGameEnd}
 					getScoreTargetPoint={getScoreTargetPoint}
 					getPickupTargetPoint={getPlayerPickupPoint}
@@ -144,7 +209,13 @@ export default function GameScreen({ mode = "pve" }) {
 			</div>
 
 			{/* Bottom Player Nametag */}
-			<div ref={bottomPlayerRef} className={`flex rounded-2xl px-8 py-3 items-center gap-4 shadow-sm border w-auto min-w-[240px] justify-center mb-0 z-10 transition-colors ${bottomBadgeClass}`}>
+			<div ref={bottomPlayerRef} className={`relative flex rounded-2xl px-8 py-3 items-center gap-4 shadow-sm border w-auto min-w-[240px] justify-center mb-0 z-10 transition-colors ${bottomBadgeClass}`}>
+				{bottomIsActive && !gameResult && (
+					<div 
+						className="timer-ring-container" 
+						style={{ "--timer-percent": (timeLeft / 60) * 100 }} 
+					/>
+				)}
 				<UserRound size={32} />
 				<span className="text-3xl font-semibold">Người A</span>
 			</div>

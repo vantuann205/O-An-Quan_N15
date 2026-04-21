@@ -20,7 +20,7 @@ const CAPTURE_ARC_SPLIT = 0.5;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEnd, getScoreTargetPoint, getPickupTargetPoint, mode = "pve" }, ref) {
+const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEnd, onBusyChange, getScoreTargetPoint, getPickupTargetPoint, mode = "pve" }, ref) {
 	const { playSound } = useSound();
 	const [selectedSquare, setSelectedSquare] = useState(null);
 	const [gameState, setGameState] = useState(null);
@@ -77,6 +77,9 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 
 	useImperativeHandle(ref, () => ({
 		cancelBoardAnimations,
+		setGameState: (newState) => setGameState(newState),
+		getGameState: () => gameState,
+		isBusy: () => isLoading || isAnimating || isAiThinking,
 	}));
 
 	const pits = displayPits;
@@ -100,6 +103,10 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 	useEffect(() => {
 		onTurnChange?.(activePlayer);
 	}, [activePlayer, onTurnChange]);
+
+	useEffect(() => {
+		onBusyChange?.(isBusy);
+	}, [isBusy, onBusyChange]);
 
 	useEffect(() => {
 		if (!gameState || gameState.status !== "finished") return;

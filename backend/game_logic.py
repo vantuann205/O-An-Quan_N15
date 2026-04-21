@@ -189,6 +189,34 @@ def apply_move(state, pit, direction):
     return state
 
 
+def apply_penalty(state):
+    """
+    Chuyển lượt của người chơi hiện tại khi hết thời gian.
+    """
+    import copy
+    state = copy.deepcopy(state)
+    board = state["board"]
+    scores = state["scores"]
+    player = state["current_player"]
+
+    # Chuyển lượt sang đối thủ
+    opp = "bottom" if player == "top" else "top"
+    state["current_player"] = opp
+
+    # Kiểm tra xem đối thủ có cần rải thêm quân không (nếu hết quân ở hàng của mình)
+    from game_logic import _check_empty_side, _refill, _final_score, _finalize, get_valid_moves
+    
+    if _check_empty_side(board, opp):
+        _refill(board, scores, opp)
+
+    # Kiểm tra xem game có kết thúc sau khi chuyển lượt không
+    if not get_valid_moves(state):
+        _final_score(board, scores)
+        return _finalize(state)
+
+    return state
+
+
 # ─── Finalize ────────────────────────────────────────────────────────────────
 
 def _finalize(state):

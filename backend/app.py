@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, render_template_string, send_from_dir
 from flask_cors import CORS
 import os
 
-from game_logic import make_state, apply_move, get_valid_moves
+from game_logic import make_state, apply_move, get_valid_moves, apply_penalty
 from ai import get_ai_move
 
 app = Flask(__name__)
@@ -79,6 +79,23 @@ def make_move():
         return jsonify({"error": "Nước đi không hợp lệ"}), 400
 
     new_state = apply_move(state, pit, direction)
+    return jsonify(new_state)
+
+
+# ─── Phạt timeout ────────────────────────────────────────────────────────────
+
+@app.post("/api/penalty")
+def penalty():
+    """
+    Body: { "state": <game_state> }
+    """
+    data = request.get_json(silent=True) or {}
+    state = data.get("state")
+
+    if state is None:
+        return jsonify({"error": "Thiếu state"}), 400
+
+    new_state = apply_penalty(state)
     return jsonify(new_state)
 
 

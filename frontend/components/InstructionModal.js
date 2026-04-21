@@ -113,6 +113,16 @@ export default function InstructionModal({ isOpen, onClose }) {
 							Trò chơi kết thúc khi hai ô quan đều hết quân. Khi đó, toàn bộ quân còn lại trong các ô dân được thu về cho người quản lý bên đó để tính điểm xác định người thắng.
 						</p>
 					</section>
+
+					<section className="space-y-4">
+						<h3 className="text-2xl font-bold text-[#4285f4] flex items-center gap-3">
+							<span className="flex items-center justify-center w-8 h-8 rounded-full bg-[#4285f4] text-white text-base">7</span>
+							Thời gian lượt đi
+						</h3>
+						<p className="text-xl text-zinc-600 leading-relaxed">
+							Mỗi người chơi có tối đa <strong>1 phút (60 giây)</strong> để thực hiện nước đi của mình. Nếu hết 1 phút mà vẫn chưa chọn, người chơi đó sẽ bị <strong>mất lượt</strong> và bị chuyển quyền đi sang cho đối phương.
+						</p>
+					</section>
 				</div>
 
 				{/* Footer */}

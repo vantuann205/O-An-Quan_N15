@@ -197,3 +197,27 @@ a {
     gap: 20px;
   }
 }
+
+.timer-ring-container {
+  position: absolute;
+  inset: -6px;
+  border-radius: 24px;
+  padding: 6px;
+  background: conic-gradient(
+    #22c55e calc(var(--timer-percent) * 1%),
+    transparent 0
+  );
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: --timer-percent 0.1s linear;
+}
+
+@property --timer-percent {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 100;
+}
