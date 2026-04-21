@@ -20,7 +20,7 @@ const CAPTURE_ARC_SPLIT = 0.5;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEnd, onBusyChange, getScoreTargetPoint, getPickupTargetPoint, mode = "pve" }, ref) {
+const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEnd, onBusyChange, getScoreTargetPoint, getPickupTargetPoint, mode = "pve", isPaused = false }, ref) {
 	const { playSound } = useSound();
 	const [selectedSquare, setSelectedSquare] = useState(null);
 	const [gameState, setGameState] = useState(null);
@@ -80,6 +80,33 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 		setGameState: (newState) => setGameState(newState),
 		getGameState: () => gameState,
 		isBusy: () => isLoading || isAnimating || isAiThinking,
+		triggerRandomMove: async () => {
+			if (!gameState || gameState.status !== "playing") return;
+			if (isLoading || isAnimating || isAiThinking) return;
+
+			setIsAnimating(true);
+			setErrorMessage("");
+			try {
+				const response = await fetch(`${API_BASE}/api/penalty`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ state: gameState }),
+				});
+				const data = await response.json();
+				if (!response.ok) throw new Error(data?.error || "Penalty thất bại");
+
+				if (typeof data?.pit === "number" && (data?.direction === 1 || data?.direction === -1)) {
+					const owner = gameState.current_player;
+					const actions = buildMoveActions(gameState, data.pit, data.direction);
+					await animateMoveActions(actions, owner);
+				}
+				if (!unmountedRef.current) setGameState(data.state);
+			} catch (error) {
+				setErrorMessage(error.message);
+			} finally {
+				if (!unmountedRef.current) setIsAnimating(false);
+			}
+		},
 	}));
 
 	const pits = displayPits;
@@ -118,6 +145,7 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 			winner: gameState.winner,
 			topScore,
 			bottomScore,
+			forfeit: gameState?.final_result?.summary?.includes("không đủ") ?? false,
 		});
 	}, [gameState, onGameEnd]);
 
@@ -157,7 +185,7 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 		const runAiMove = async () => {
 			if (!gameState || mode !== "pve") return;
 			if (gameState.status !== "playing" || gameState.current_player !== "top") return;
-			if (isLoading || isAnimating) return;
+			if (isLoading || isAnimating || isPaused) return;
 			if (aiLockRef.current) return;
 
 			aiLockRef.current = true;
@@ -200,11 +228,26 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 		};
 
 		runAiMove();
-	}, [gameState, mode, isLoading, isAnimating]);
+	}, [gameState, mode, isLoading, isAnimating, isPaused]);
 
 	const isQuanPit = (index) => index === 0 || index === 6;
 	const isTopPit = (index) => TOP_PITS.includes(index);
 	const isBottomPit = (index) => BOTTOM_PITS.includes(index);
+
+	const getValidMovesLocal = (state) => {
+		if (!state?.board) return [];
+		const board = state.board;
+		const player = state.current_player;
+		const playerPits = player === "top" ? TOP_PITS : BOTTOM_PITS;
+		const moves = [];
+		for (const i of playerPits) {
+			if (board[i] > 0) {
+				moves.push([i, 1]);
+				moves.push([i, -1]);
+			}
+		}
+		return moves;
+	};
 
 	const getVisualStep = (index, direction) => {
 		if (isBottomPit(index)) {

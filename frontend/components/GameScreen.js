@@ -22,7 +22,7 @@ export default function GameScreen({ mode = "pve" }) {
 	const bottomScoreRef = useRef(null);
 	const topPlayerRef = useRef(null);
 	const bottomPlayerRef = useRef(null);
-	const [timeLeft, setTimeLeft] = useState(60);
+	const [timeLeft, setTimeLeft] = useState(30);
 	const [isBoardBusy, setIsBoardBusy] = useState(false);
 	const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:5000";
 
@@ -54,37 +54,16 @@ export default function GameScreen({ mode = "pve" }) {
 
 	useEffect(() => {
 		// Reset timer when turn changes
-		setTimeLeft(60);
+		setTimeLeft(30);
 	}, [activePlayer]);
+
+
 
 	const handleTimeout = async () => {
 		if (gameResult) return;
 		
-		// Attempt to get bridge to Board component's state
-		// We'll need to fetch the penalty from backend
 		try {
-			// This is tricky because we need the current state from the Board
-			// Actually, the Board component should probably handle the penalty call
-			// Or we pass a signal to it.
-			// Let's assume we can trigger it here if we had the state.
-			// Better: Let's make Board's setGameState accessible.
-			
-			// We need a way to get the current state.
-			// For now, let's assume we can trigger it in Board or just call API if we had the state.
-			// Since GameScreen doesn't have the full state (Board does), 
-			// let's add a `triggerPenalty` method to Board.
-			
-			const response = await fetch(`${API_BASE}/api/penalty`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					state: boardRef.current?.getGameState?.() || {} 
-				}),
-			});
-			const data = await response.json();
-			if (response.ok) {
-				boardRef.current?.setGameState?.(data);
-			}
+			await boardRef.current?.triggerRandomMove?.();
 		} catch (error) {
 			console.error("Penalty failed:", error);
 		}
@@ -160,6 +139,10 @@ export default function GameScreen({ mode = "pve" }) {
 	const getOutcomeSubtitle = () => {
 		if (!gameResult) return "";
 		if (gameResult.winner === "draw") return "Hai bên cân bằng, ván này chia điểm";
+		if (gameResult.forfeit) {
+			const loser = gameResult.winner === "bottom" ? topPlayerName : "Người A";
+			return `${loser} không đủ 5 quân trong kho để rải lại`;
+		}
 		return gameResult.winner === "bottom" ? "Bạn đã thắng ván này" : `${topPlayerName} đã thắng ván này`;
 	};
 
@@ -186,7 +169,7 @@ export default function GameScreen({ mode = "pve" }) {
 				{topIsActive && !gameResult && (
 					<div 
 						className="timer-ring-container" 
-						style={{ "--timer-percent": (timeLeft / 60) * 100 }} 
+						style={{ "--timer-percent": (timeLeft / 30) * 100 }} 
 					/>
 				)}
 				{topPlayerIcon}
@@ -199,6 +182,7 @@ export default function GameScreen({ mode = "pve" }) {
 					ref={boardRef}
 					key={boardSeed}
 					mode={mode}
+					isPaused={isSettingsOpen}
 					onScoresChange={setScores}
 					onTurnChange={setActivePlayer}
 					onBusyChange={setIsBoardBusy}
@@ -213,7 +197,7 @@ export default function GameScreen({ mode = "pve" }) {
 				{bottomIsActive && !gameResult && (
 					<div 
 						className="timer-ring-container" 
-						style={{ "--timer-percent": (timeLeft / 60) * 100 }} 
+						style={{ "--timer-percent": (timeLeft / 30) * 100 }} 
 					/>
 				)}
 				<UserRound size={32} />
