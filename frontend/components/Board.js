@@ -9,13 +9,13 @@ const TOP_ROW_INDICES = [1, 2, 3, 4, 5];
 const BOTTOM_ROW_INDICES = [11, 10, 9, 8, 7];
 const INITIAL_PITS = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:5000";
-const PICKUP_DELAY_MS = 320;
-const SOW_DELAY_MS = 420;
+const PICKUP_DELAY_MS = 300;
+const SOW_DELAY_MS = 400;
 const CAPTURE_DELAY_MS = 260;
 const PICKUP_FLIGHT_MS = 300;
-const PICKUP_STAGGER_MS = 32;
-const SOW_FLIGHT_MS = 620;
-const CAPTURE_FLIGHT_MS = 900;
+const PICKUP_STAGGER_MS = 30;
+const SOW_FLIGHT_MS = 550;
+const CAPTURE_FLIGHT_MS = 850;
 const CAPTURE_ARC_SPLIT = 0.5;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -440,7 +440,7 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 					: "cubic-bezier(0.28, 0.7, 0.25, 1)"
 				: isPickup
 					? "cubic-bezier(0.2, 0.78, 0.2, 1)"
-					: "cubic-bezier(0.22, 0.61, 0.36, 1)",
+					: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
 		};
 	};
 

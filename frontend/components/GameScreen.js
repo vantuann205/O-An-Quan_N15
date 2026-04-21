@@ -24,6 +24,7 @@ export default function GameScreen({ mode = "pve" }) {
 	const bottomPlayerRef = useRef(null);
 	const [timeLeft, setTimeLeft] = useState(30);
 	const [isBoardBusy, setIsBoardBusy] = useState(false);
+	const isPenaltyRunningRef = useRef(false);
 	const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:5000";
 
 	const topIsActive = activePlayer === "top";
@@ -61,11 +62,16 @@ export default function GameScreen({ mode = "pve" }) {
 
 	const handleTimeout = async () => {
 		if (gameResult) return;
-		
+		if (isPenaltyRunningRef.current) return;
+
+		isPenaltyRunningRef.current = true;
+		setTimeLeft(0);
 		try {
 			await boardRef.current?.triggerRandomMove?.();
 		} catch (error) {
 			console.error("Penalty failed:", error);
+		} finally {
+			isPenaltyRunningRef.current = false;
 		}
 	};
 
