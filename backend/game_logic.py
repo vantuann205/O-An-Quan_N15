@@ -11,6 +11,7 @@ Board layout (index 0-11):
 """
 
 import copy
+import random
 
 NUM_PITS    = 12
 QUAN_PITS   = (0, 6)
@@ -139,6 +140,24 @@ def _final_score(board, scores):
         board[i] = 0
 
 
+def _finalize_forfeit(state, loser):
+    """Xu thua ngay khi nguoi choi khong du 5 diem de rai lai."""
+    scores = state["scores"]
+    winner = opponent(loser)
+    top_score = scores["top"]
+    bottom_score = scores["bottom"]
+
+    state["status"] = "finished"
+    state["winner"] = winner
+    state["final_result"] = {
+        "top_score": top_score,
+        "bottom_score": bottom_score,
+        "score_diff": top_score - bottom_score,
+        "summary": f"{loser} thua do không đủ 5 quân trong kho để rải lại",
+    }
+    return state
+
+
 # ─── Apply move (state-based wrapper) ────────────────────────────────────────
 
 def apply_move(state, pit, direction):
@@ -178,6 +197,8 @@ def apply_move(state, pit, direction):
     next_player = opponent(player)
 
     if _check_empty_side(board, next_player):
+        if scores[next_player] < 5:
+            return _finalize_forfeit(state, next_player)
         _refill(board, scores, next_player)
 
     # Neu van khong co nuoc di -> ket thuc
@@ -191,30 +212,19 @@ def apply_move(state, pit, direction):
 
 def apply_penalty(state):
     """
-    Chuyển lượt của người chơi hiện tại khi hết thời gian.
+    Khi người chơi hiện tại hết thời gian, tự động đi 1 nước ngẫu nhiên hợp lệ.
     """
-    import copy
     state = copy.deepcopy(state)
-    board = state["board"]
-    scores = state["scores"]
-    player = state["current_player"]
 
-    # Chuyển lượt sang đối thủ
-    opp = "bottom" if player == "top" else "top"
-    state["current_player"] = opp
+    if state.get("status") == "finished":
+        return state
 
-    # Kiểm tra xem đối thủ có cần rải thêm quân không (nếu hết quân ở hàng của mình)
-    from game_logic import _check_empty_side, _refill, _final_score, _finalize, get_valid_moves
-    
-    if _check_empty_side(board, opp):
-        _refill(board, scores, opp)
+    valid_moves = get_valid_moves(state)
+    if not valid_moves:
+        return state
 
-    # Kiểm tra xem game có kết thúc sau khi chuyển lượt không
-    if not get_valid_moves(state):
-        _final_score(board, scores)
-        return _finalize(state)
-
-    return state
+    pit, direction = random.choice(valid_moves)
+    return apply_move(state, pit, direction)
 
 
 # ─── Finalize ────────────────────────────────────────────────────────────────

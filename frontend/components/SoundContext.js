@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
+import { Howl, Howler } from "howler";
 
 const SoundContext = createContext();
 
@@ -18,310 +19,189 @@ export const SoundProvider = ({ children }) => {
 	const [masterVolume, setMasterVolume] = useState(0.85);
 	const [musicVolume, setMusicVolume] = useState(0.7);
 	const [effectsVolume, setEffectsVolume] = useState(0.75);
-	const audioContextRef = useRef(null);
+	
+	const masterVolumeRef = useRef(masterVolume);
+	const musicVolumeRef = useRef(musicVolume);
+	const effectsVolumeRef = useRef(effectsVolume);
+	const effectsEnabledRef = useRef(effectsEnabled);
+	const musicEnabledRef = useRef(musicEnabled);
+
+	useEffect(() => { masterVolumeRef.current = masterVolume; }, [masterVolume]);
+	useEffect(() => { musicVolumeRef.current = musicVolume; }, [musicVolume]);
+	useEffect(() => { effectsVolumeRef.current = effectsVolume; }, [effectsVolume]);
+	useEffect(() => { effectsEnabledRef.current = effectsEnabled; }, [effectsEnabled]);
+	useEffect(() => { musicEnabledRef.current = musicEnabled; }, [musicEnabled]);
+
 	const bgMusicTimerRef = useRef(null);
-	const bgMusicTimeoutRefs = useRef([]);
-	const effectTimeoutRefs = useRef([]);  // Track tat ca effect timeouts
-	const bgMusicActiveRef = useRef(false);
-	const musicArmedRef = useRef(false);
-
-	const ensureAudioContext = async () => {
-		if (typeof window === "undefined") return null;
-
-		if (!audioContextRef.current) {
-			const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-			if (!AudioContextClass) return null;
-			audioContextRef.current = new AudioContextClass();
-		}
-
-		if (audioContextRef.current.state === "suspended") {
-			await audioContextRef.current.resume().catch(() => {});
-		}
-
-		return audioContextRef.current;
-	};
+	const musicActiveRef = useRef(false);
+	const bgMusicRef = useRef(null);
+	const effectSoundsRef = useRef({});
 
 	const stopBackgroundMusic = () => {
 		if (bgMusicTimerRef.current) {
 			clearInterval(bgMusicTimerRef.current);
 			bgMusicTimerRef.current = null;
 		}
-
-		bgMusicTimeoutRefs.current.forEach((timeoutId) => clearTimeout(timeoutId));
-		bgMusicTimeoutRefs.current = [];
+		if (bgMusicRef.current) {
+			bgMusicRef.current.fade(0.3, 0, 500);
+			setTimeout(() => {
+				if (bgMusicRef.current) {
+					bgMusicRef.current.stop();
+					bgMusicRef.current = null;
+				}
+			}, 550);
+		}
+		musicActiveRef.current = false;
 	};
 
 	const stopAllEffects = () => {
-		// Clear tat ca effect timeouts
-		effectTimeoutRefs.current.forEach((timeoutId) => clearTimeout(timeoutId));
-		effectTimeoutRefs.current = [];
-	};
-
-	const stopEffectsChannel = () => {
-		if (!audioContextRef.current || !audioContextRef.current.__soundMaster) return;
-
-		const now = audioContextRef.current.currentTime;
-		const { effectsGain } = audioContextRef.current.__soundMaster;
-		effectsGain.gain.cancelScheduledValues(now);
-		effectsGain.gain.setValueAtTime(0, now);
+		Object.values(effectSoundsRef.current).forEach((sound) => {
+			if (sound && sound.playing()) {
+				sound.fade(0.1, 0, 100);
+			}
+		});
 	};
 
 	const stopAllSounds = () => {
-		// 1. Dung tat ca music timeouts
 		stopBackgroundMusic();
-		
-		// 2. Dung tat ca effect timeouts
 		stopAllEffects();
-		stopEffectsChannel();
+		Howler.stop();
+	};
+
+	const createSyntheticSound = (type) => {
+		const presets = {
+			click: { freq: 740, type: "square", duration: 0.035 },
+			pickup: { freq: 392, type: "triangle", duration: 0.11 },
+			sow: { freq: 220, type: "triangle", duration: 0.08 },
+			capture: { freq: 523.25, type: "sine", duration: 0.1 },
+			"bg-music": { freq: 110, type: "triangle", duration: 0.85 },
+		};
+
+		const preset = presets[type] || presets.click;
+		const AudioContext = window.AudioContext || window.webkitAudioContext;
+		if (!AudioContext) return null;
+
+		const vol = clampVolume(effectsVolumeRef.current * masterVolumeRef.current);
+		if (vol === 0) return null;
+
+		const audioCtx = new AudioContext();
+		const oscillator = audioCtx.createOscillator();
+		const gainNode = audioCtx.createGain();
+
+		oscillator.type = preset.type;
+		oscillator.frequency.setValueAtTime(preset.freq, audioCtx.currentTime);
 		
-		// 3. Reset flags
-		bgMusicActiveRef.current = false;
-		musicArmedRef.current = false;
-		
-		// 4. Suspend AudioContext de tat ngay lap tuc tat ca oscillator/buffer dang chay
-		if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-			audioContextRef.current.suspend().catch(() => {});
-		}
-	};
+		gainNode.gain.setValueAtTime(0.001, audioCtx.currentTime);
+		gainNode.gain.exponentialRampToValueAtTime(0.3 * vol, audioCtx.currentTime + 0.01);
+		gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + preset.duration);
 
-	const scheduleTimeout = (callback, delay) => {
-		const timeoutId = window.setTimeout(() => {
-			bgMusicTimeoutRefs.current = bgMusicTimeoutRefs.current.filter((value) => value !== timeoutId);
-			callback();
-		}, delay);
-
-		bgMusicTimeoutRefs.current.push(timeoutId);
-	};
-
-	const createMasterChain = (ctx) => {
-		if (ctx.__soundMaster) return ctx.__soundMaster;
-
-		const compressor = ctx.createDynamicsCompressor();
-		compressor.threshold.setValueAtTime(-22, ctx.currentTime);
-		compressor.knee.setValueAtTime(18, ctx.currentTime);
-		compressor.ratio.setValueAtTime(5, ctx.currentTime);
-		compressor.attack.setValueAtTime(0.003, ctx.currentTime);
-		compressor.release.setValueAtTime(0.18, ctx.currentTime);
-
-		const masterGain = ctx.createGain();
-		masterGain.gain.setValueAtTime(1.45 * masterVolume, ctx.currentTime);
-
-		const musicGain = ctx.createGain();
-		musicGain.gain.setValueAtTime(1, ctx.currentTime);
-
-		const effectsGain = ctx.createGain();
-		effectsGain.gain.setValueAtTime(1, ctx.currentTime);
-
-		musicGain.connect(masterGain);
-		effectsGain.connect(masterGain);
-		masterGain.connect(compressor);
-		compressor.connect(ctx.destination);
-
-		ctx.__soundMaster = { compressor, masterGain, musicGain, effectsGain };
-		return ctx.__soundMaster;
-	};
-
-	const syncChannelGains = (ctx) => {
-		if (!ctx?.__soundMaster) return;
-
-		const { musicGain, effectsGain } = ctx.__soundMaster;
-		const now = ctx.currentTime;
-
-		musicGain.gain.cancelScheduledValues(now);
-		effectsGain.gain.cancelScheduledValues(now);
-		ctx.__soundMaster.masterGain.gain.cancelScheduledValues(now);
-		ctx.__soundMaster.masterGain.gain.setTargetAtTime(1.45 * masterVolume, now, 0.015);
-		musicGain.gain.setTargetAtTime(musicEnabled ? musicVolume : 0, now, 0.015);
-		effectsGain.gain.setTargetAtTime(effectsEnabled ? effectsVolume : 0, now, 0.015);
-	};
-
-	const createVoice = (ctx, { channel = "effects", pan = 0, volume = 0.08 } = {}) => {
-		const { musicGain, effectsGain } = createMasterChain(ctx);
-		const channelGain = channel === "music" ? musicGain : effectsGain;
-		const voiceGain = ctx.createGain();
-		voiceGain.gain.value = volume;
-
-		const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-		if (panner) {
-			panner.pan.setValueAtTime(pan, ctx.currentTime);
-			voiceGain.connect(panner);
-			panner.connect(channelGain);
-		} else {
-			voiceGain.connect(channelGain);
-		}
-
-		return { voiceGain, output: panner || voiceGain };
-	};
-
-	const playTone = (
-		ctx,
-		{ frequency, type = "sine", duration = 0.12, volume = 0.08, attack = 0.01, release = 0.08, detune = 0, pan = 0, glideTo = null, filterType = null, filterCutoff = null, channel = "effects" }
-	) => {
-		if (!ctx) return;
-
-		const oscillator = ctx.createOscillator();
-		const filter = filterType ? ctx.createBiquadFilter() : null;
-		const { voiceGain, output } = createVoice(ctx, { channel, pan, volume });
-		oscillator.type = type;
-		oscillator.frequency.setValueAtTime(frequency, ctx.currentTime);
-		oscillator.detune.setValueAtTime(detune, ctx.currentTime);
-		voiceGain.gain.setValueAtTime(0.0001, ctx.currentTime);
-		voiceGain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + attack);
-		voiceGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration + release);
-
-		if (filter) {
-			filter.type = filterType;
-			filter.frequency.setValueAtTime(filterCutoff || 1200, ctx.currentTime);
-			oscillator.connect(filter);
-			filter.connect(voiceGain);
-		} else {
-			oscillator.connect(voiceGain);
-		}
-
-		if (glideTo != null) {
-			oscillator.frequency.exponentialRampToValueAtTime(glideTo, ctx.currentTime + duration);
-		}
+		oscillator.connect(gainNode);
+		gainNode.connect(audioCtx.destination);
 
 		oscillator.start();
-		oscillator.stop(ctx.currentTime + duration + release + 0.02);
+		oscillator.stop(audioCtx.currentTime + preset.duration + 0.02);
 
-		return output;
+		return { stop: () => {} };
 	};
 
-	const playNoiseBurst = (ctx, { duration = 0.16, volume = 0.3, pan = 0, channel = "effects" } = {}) => {
-		const { musicGain, effectsGain } = createMasterChain(ctx);
-		const channelGain = channel === "music" ? musicGain : effectsGain;
-		const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * duration));
-		const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-		const channelData = buffer.getChannelData(0);
-
-		for (let i = 0; i < bufferSize; i += 1) {
-			channelData[i] = Math.random() * 2 - 1;
-		}
-
-		const source = ctx.createBufferSource();
-		const bandpass = ctx.createBiquadFilter();
-		const voiceGain = ctx.createGain();
-		const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-
-		bandpass.type = "bandpass";
-		bandpass.frequency.setValueAtTime(1600, ctx.currentTime);
-		bandpass.Q.setValueAtTime(1.2, ctx.currentTime);
-
-		voiceGain.gain.setValueAtTime(0.0001, ctx.currentTime);
-		voiceGain.gain.exponentialRampToValueAtTime(volume, ctx.currentTime + 0.01);
-		voiceGain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-
-		source.buffer = buffer;
-		source.connect(bandpass);
-		bandpass.connect(voiceGain);
-
-		if (panner) {
-			panner.pan.setValueAtTime(pan, ctx.currentTime);
-			voiceGain.connect(panner);
-			panner.connect(channelGain);
-		} else {
-			voiceGain.connect(channelGain);
-		}
-
-		source.start();
-		source.stop(ctx.currentTime + duration + 0.02);
+	const playSyntheticSound = (type) => {
+		if (!effectsEnabledRef.current || effectsVolumeRef.current === 0 || masterVolumeRef.current === 0) return;
+		createSyntheticSound(type);
 	};
 
-	const playMusicLoop = async () => {
-		const ctx = await ensureAudioContext();
-		if (!ctx || !musicEnabled) return;
+	const startMusic = () => {
+		if (!musicEnabled || musicActiveRef.current) return;
 
-		createMasterChain(ctx);
-		syncChannelGains(ctx);
+		musicActiveRef.current = true;
 
-		stopBackgroundMusic();
-		bgMusicActiveRef.current = true;
-		musicArmedRef.current = true;
+		const AudioContext = window.AudioContext || window.webkitAudioContext;
+		if (!AudioContext) return;
 
+		const audioCtx = new AudioContext();
+		
 		const chords = [
-			{ bass: 146.83, chord: [293.66, 349.23, 440], lead: [659.25, 587.33], color: -0.4 },
-			{ bass: 130.81, chord: [261.63, 329.63, 392], lead: [587.33, 523.25], color: -0.15 },
-			{ bass: 174.61, chord: [349.23, 440, 523.25], lead: [698.46, 659.25], color: 0.15 },
-			{ bass: 196, chord: [392, 493.88, 587.33], lead: [783.99, 698.46], color: 0.4 },
+			{ bass: 146.83, chord: [293.66, 349.23, 440], lead: [659.25, 587.33] },
+			{ bass: 130.81, chord: [261.63, 329.63, 392], lead: [587.33, 523.25] },
+			{ bass: 174.61, chord: [349.23, 440, 523.25], lead: [698.46, 659.25] },
+			{ bass: 196, chord: [392, 493.88, 587.33], lead: [783.99, 698.46] },
 		];
 		const bpm = 104;
 		const beatMs = 60000 / bpm;
-		const cycleMs = beatMs * 8;
+		let cycleCount = 0;
 
-		const scheduleCycle = () => {
-			if (!musicEnabled || !bgMusicActiveRef.current) return;
+		const playChord = (chordData, delay) => {
+			setTimeout(() => {
+				if (!musicActiveRef.current) return;
 
-			chords.forEach((bar, barIndex) => {
-				const baseDelay = barIndex * beatMs * 2;
+				const now = audioCtx.currentTime;
+				const vol = clampVolume(musicVolumeRef.current * masterVolumeRef.current);
+				if (vol === 0) return;
+				
+				const bass = audioCtx.createOscillator();
+				const bassGain = audioCtx.createGain();
+				bass.type = "triangle";
+				bass.frequency.setValueAtTime(chordData.bass, now);
+				bassGain.gain.setValueAtTime(0.001, now);
+				bassGain.gain.linearRampToValueAtTime(0.15 * vol, now + 0.02);
+				bassGain.gain.linearRampToValueAtTime(0.001, now + 0.36);
+				bass.connect(bassGain);
+				bassGain.connect(audioCtx.destination);
+				bass.start(now);
+				bass.stop(now + 0.4);
 
-				scheduleTimeout(() => {
-					playTone(ctx, {
-						channel: "music",
-						frequency: bar.bass,
-						type: "triangle",
-						duration: 0.36,
-						volume: 0.14,
-						attack: 0.02,
-						release: 0.18,
-						pan: -0.2,
-						filterType: "lowpass",
-						filterCutoff: 520,
-					});
-				}, baseDelay);
-
-				bar.chord.forEach((note, noteIndex) => {
-					scheduleTimeout(() => {
-						playTone(ctx, {
-							channel: "music",
-							frequency: note,
-							type: "sine",
-							duration: 0.72,
-							volume: noteIndex === 1 ? 0.095 : 0.07,
-							attack: 0.03,
-							release: 0.32,
-							pan: bar.color + noteIndex * 0.12,
-							detune: noteIndex === 0 ? -6 : noteIndex === 2 ? 7 : 0,
-							filterType: "bandpass",
-							filterCutoff: 950 + noteIndex * 180,
-						});
-					}, baseDelay + noteIndex * 55);
+				chordData.chord.forEach((freq, i) => {
+					const osc = audioCtx.createOscillator();
+					const gain = audioCtx.createGain();
+					osc.type = "sine";
+					osc.frequency.setValueAtTime(freq, now);
+					gain.gain.setValueAtTime(0.001, now);
+					gain.gain.linearRampToValueAtTime(0.08 * vol, now + 0.03);
+					gain.gain.linearRampToValueAtTime(0.001, now + 0.72);
+					osc.connect(gain);
+					gain.connect(audioCtx.destination);
+					osc.start(now + i * 0.055);
+					osc.stop(now + 0.75);
 				});
 
-				bar.lead.forEach((note, leadIndex) => {
-					scheduleTimeout(() => {
-						playTone(ctx, {
-							channel: "music",
-							frequency: note,
-							type: "sine",
-							duration: 0.18,
-							volume: 0.085,
-							attack: 0.01,
-							release: 0.08,
-							pan: bar.color * 0.65,
-							glideTo: note + (leadIndex === 0 ? 14 : -10),
-							filterType: "highpass",
-							filterCutoff: 420,
-						});
-					}, baseDelay + beatMs * (1 + leadIndex * 0.5));
+				chordData.lead.forEach((freq, i) => {
+					const osc = audioCtx.createOscillator();
+					const gain = audioCtx.createGain();
+					osc.type = "sine";
+					osc.frequency.setValueAtTime(freq, now);
+					osc.frequency.linearRampToValueAtTime(freq + (i === 0 ? 14 : -10), now + 0.18);
+					gain.gain.setValueAtTime(0.001, now);
+					gain.gain.linearRampToValueAtTime(0.09 * vol, now + 0.01);
+					gain.gain.linearRampToValueAtTime(0.001, now + 0.18);
+					osc.connect(gain);
+					gain.connect(audioCtx.destination);
+					osc.start(now + beatMs * 0.001 * (1 + i * 0.5));
+					osc.stop(now + 0.2);
 				});
-
-				scheduleTimeout(() => {
-					playNoiseBurst(ctx, { channel: "music", duration: 0.12, volume: 0.02, pan: bar.color * 0.8 });
-					playNoiseBurst(ctx, { channel: "music", duration: 0.12, volume: 0.03, pan: bar.color * 0.8 });
-				}, baseDelay + beatMs * 1.75);
-
-				scheduleTimeout(() => {
-					playNoiseBurst(ctx, { channel: "music", duration: 0.14, volume: 0.045, pan: -bar.color * 0.55 });
-				}, baseDelay + beatMs * 0.95);
-			});
+			}, delay);
 		};
 
-		scheduleCycle();
-		bgMusicTimerRef.current = window.setInterval(scheduleCycle, cycleMs);
+		const playCycle = () => {
+			if (!musicActiveRef.current || !musicEnabled) return;
+			
+			chords.forEach((bar, barIndex) => {
+				const delay = barIndex * beatMs * 2;
+				playChord(bar, delay);
+			});
+
+			cycleCount++;
+		};
+
+		playCycle();
+		bgMusicTimerRef.current = setInterval(playCycle, beatMs * 8);
 	};
 
-	// Load sound preference from localStorage on mount
+	const playSound = (soundName) => {
+		if (!effectsEnabledRef.current || effectsVolumeRef.current === 0 || masterVolumeRef.current === 0) return;
+		playSyntheticSound(soundName);
+	};
+
+	const isMuted = !musicEnabled && !effectsEnabled;
+
 	useEffect(() => {
 		const savedMute = localStorage.getItem("game_muted");
 		const savedMusicEnabled = localStorage.getItem("game_music_enabled");
@@ -357,31 +237,24 @@ export const SoundProvider = ({ children }) => {
 		return () => {
 			stopBackgroundMusic();
 			stopAllEffects();
-			bgMusicActiveRef.current = false;
-			if (audioContextRef.current) {
-				audioContextRef.current.close().catch(() => {});
-				audioContextRef.current = null;
-			}
 		};
 	}, []);
 
-	// Handle background channel toggle
+	useEffect(() => {
+		Howler.mute(!effectsEnabled);
+		Howler.volume(masterVolume);
+	}, [masterVolume, effectsEnabled]);
+
 	useEffect(() => {
 		if (!musicEnabled) {
 			stopBackgroundMusic();
 			return;
 		}
 
-		if (bgMusicActiveRef.current) {
-			void playMusicLoop();
+		if (musicActiveRef.current) {
+			startMusic();
 		}
-	}, [musicEnabled, effectsEnabled]);
-
-	useEffect(() => {
-		const ctx = audioContextRef.current;
-		if (!ctx) return;
-		syncChannelGains(ctx);
-	}, [musicEnabled, effectsEnabled, masterVolume, musicVolume, effectsVolume]);
+	}, [musicEnabled]);
 
 	const toggleMute = () => {
 		const next = !(!musicEnabled && !effectsEnabled);
@@ -392,7 +265,7 @@ export const SoundProvider = ({ children }) => {
 		localStorage.setItem("game_music_enabled", String(nextEnabled));
 		localStorage.setItem("game_effects_enabled", String(nextEnabled));
 		if (!nextEnabled) {
-			musicArmedRef.current = false;
+			musicActiveRef.current = false;
 		}
 	};
 
@@ -402,7 +275,7 @@ export const SoundProvider = ({ children }) => {
 			localStorage.setItem("game_music_enabled", String(next));
 			localStorage.setItem("game_muted", String(!next && !effectsEnabled));
 			if (!next) {
-				musicArmedRef.current = false;
+				musicActiveRef.current = false;
 			}
 			return next;
 		});
@@ -425,6 +298,10 @@ export const SoundProvider = ({ children }) => {
 			setMusicEnabled(true);
 			localStorage.setItem("game_music_enabled", "true");
 			localStorage.setItem("game_muted", String(!effectsEnabled));
+		} else {
+			setMusicEnabled(false);
+			stopBackgroundMusic();
+			localStorage.setItem("game_music_enabled", "false");
 		}
 	};
 
@@ -437,78 +314,24 @@ export const SoundProvider = ({ children }) => {
 			localStorage.setItem("game_effects_enabled", "true");
 			localStorage.setItem("game_muted", String(!musicEnabled));
 		}
+		if (next === 0) {
+			setEffectsEnabled(false);
+			stopAllEffects();
+		}
 	};
 
 	const setMasterVolumeLevel = (value) => {
 		const next = clampVolume(value);
 		setMasterVolume(next);
 		localStorage.setItem("game_master_volume", String(next));
+		if (next === 0) {
+			stopAllSounds();
+		}
 	};
-
-	const playSyntheticSound = async (type) => {
-		if (typeof window === "undefined" || !effectsEnabled) return;
-
-		const ctx = await ensureAudioContext();
-		if (!ctx) return;
-
-		createMasterChain(ctx);
-		syncChannelGains(ctx);
-
-		const presets = {
-			click: [
-				{ frequency: 740, type: "square", duration: 0.035, volume: 0.24, pan: -0.15, filterType: "highpass", filterCutoff: 1800 },
-				{ frequency: 980, type: "sine", duration: 0.065, volume: 0.2, pan: 0.2, detune: 8, glideTo: 880, filterType: "bandpass", filterCutoff: 2400 },
-			],
-			pickup: [
-				{ frequency: 392, type: "triangle", duration: 0.11, volume: 0.26, pan: -0.25, filterType: "bandpass", filterCutoff: 1100 },
-				{ frequency: 523.25, type: "triangle", duration: 0.1, volume: 0.22, delay: 55, pan: 0.2, glideTo: 659.25, filterType: "bandpass", filterCutoff: 1400 },
-				{ frequency: 783.99, type: "sine", duration: 0.08, volume: 0.18, delay: 95, pan: 0.35, filterType: "highpass", filterCutoff: 2200 },
-			],
-			sow: [
-				{ frequency: 220, type: "triangle", duration: 0.08, volume: 0.2, pan: -0.12, filterType: "lowpass", filterCutoff: 900 },
-				{ frequency: 174.61, type: "sine", duration: 0.12, volume: 0.13, delay: 45, pan: 0.18, glideTo: 196, filterType: "lowpass", filterCutoff: 700 },
-			],
-			capture: [
-				{ frequency: 523.25, type: "sine", duration: 0.1, volume: 0.26, pan: -0.15, filterType: "bandpass", filterCutoff: 1300 },
-				{ frequency: 659.25, type: "triangle", duration: 0.12, volume: 0.22, delay: 65, pan: 0.1, glideTo: 783.99, filterType: "bandpass", filterCutoff: 1600 },
-				{ frequency: 987.77, type: "sine", duration: 0.16, volume: 0.18, delay: 120, pan: 0.35, filterType: "highpass", filterCutoff: 2600 },
-			],
-			"bg-music": [
-				{ frequency: 110, type: "triangle", duration: 0.85, volume: 0.12, pan: -0.2, filterType: "lowpass", filterCutoff: 900 },
-				{ frequency: 164.81, type: "sine", duration: 0.7, volume: 0.09, delay: 110, pan: 0.2, filterType: "bandpass", filterCutoff: 1200 },
-			],
-		};
-
-		const notes = presets[type] || [];
-		notes.forEach((note) => {
-			const timeoutId = window.setTimeout(() => {
-				// Remove tu list khi chay xong
-				effectTimeoutRefs.current = effectTimeoutRefs.current.filter((id) => id !== timeoutId);
-				playTone(ctx, note);
-			}, note.delay || 0);
-			
-			// Track timeout de co the clear sau
-			effectTimeoutRefs.current.push(timeoutId);
-		});
-	};
-
-	const startMusic = () => {
-		if (!musicEnabled) return;
-		if (bgMusicActiveRef.current) return;
-		void playMusicLoop().catch(() => {});
-	};
-
-	const playSound = (soundName) => {
-		if (!effectsEnabled) return;
-
-		void playSyntheticSound(soundName);
-	};
-
-	const isMuted = !musicEnabled && !effectsEnabled;
 
 	useEffect(() => {
 		const handleFirstInteraction = () => {
-			if (musicEnabled && !bgMusicActiveRef.current) {
+			if (musicEnabled && !musicActiveRef.current) {
 				startMusic();
 			}
 		};
@@ -520,7 +343,7 @@ export const SoundProvider = ({ children }) => {
 			const interactiveElement = event.target.closest("button, .start-button, .mode-button, [role='button']");
 			if (!interactiveElement) return;
 
-			void playSyntheticSound("click");
+			playSound("click");
 		};
 
 		window.addEventListener("pointerdown", handleFirstInteraction, { once: true, passive: true });

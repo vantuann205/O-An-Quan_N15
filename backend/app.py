@@ -12,6 +12,7 @@ Endpoints:
 from flask import Flask, jsonify, request, render_template_string, send_from_directory
 from flask_cors import CORS
 import os
+import random
 
 from game_logic import make_state, apply_move, get_valid_moves, apply_penalty
 from ai import get_ai_move
@@ -95,8 +96,17 @@ def penalty():
     if state is None:
         return jsonify({"error": "Thiếu state"}), 400
 
-    new_state = apply_penalty(state)
-    return jsonify(new_state)
+    if state.get("status") == "finished":
+        return jsonify({"error": "Game da ket thuc"}), 400
+
+    valid_moves = get_valid_moves(state)
+    if not valid_moves:
+        new_state = apply_penalty(state)
+        return jsonify({"pit": None, "direction": None, "state": new_state})
+
+    pit, direction = random.choice(valid_moves)
+    new_state = apply_move(state, pit, direction)
+    return jsonify({"pit": pit, "direction": direction, "state": new_state})
 
 
 # ─── Lấy nước đi AI ──────────────────────────────────────────────────────────

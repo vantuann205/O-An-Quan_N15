@@ -95,7 +95,7 @@ export default function InstructionModal({ isOpen, onClose }) {
 							</div>
 							<div className="space-y-2">
 								<h4 className="font-bold text-zinc-900 text-lg">Hết quân ở 5 ô dân (Mượn quân)</h4>
-								<p>Nếu đến lượt mà 5 ô dân bên mình không còn quân, người chơi dùng 5 quân dân đã ăn được để rải đều vào 5 ô bên mình. Nếu không đủ, phải vay quân đối phương hoặc bị xử thua.</p>
+								<p>Nếu đến lượt mà 5 ô dân bên mình không còn quân, người chơi dùng 5 quân dân đã ăn được để rải đều vào 5 ô bên mình (mỗi ô 1 quân, trừ 5 điểm). Nếu kho không đủ 5 quân, người chơi đó <strong className="text-rose-600">thua ngay lập tức</strong>.</p>
 							</div>
 							<div className="space-y-2 text-rose-600">
 								<h4 className="font-bold text-lg italic">Trường hợp "Quan non"</h4>
@@ -120,7 +120,7 @@ export default function InstructionModal({ isOpen, onClose }) {
 							Thời gian lượt đi
 						</h3>
 						<p className="text-xl text-zinc-600 leading-relaxed">
-							Mỗi người chơi có tối đa <strong>1 phút (60 giây)</strong> để thực hiện nước đi của mình. Nếu hết 1 phút mà vẫn chưa chọn, người chơi đó sẽ bị <strong>mất lượt</strong> và bị chuyển quyền đi sang cho đối phương.
+							Mỗi người chơi có tối đa <strong>30 giây</strong> để thực hiện nước đi của mình. Nếu hết giờ mà vẫn chưa chọn, hệ thống sẽ tự động <strong>đi ngẫu nhiên</strong> một nước hợp lệ thay cho người chơi đó.
 						</p>
 					</section>
 				</div>
