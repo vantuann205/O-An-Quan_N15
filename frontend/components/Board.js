@@ -44,6 +44,10 @@ const Board = forwardRef(function Board({ onScoresChange, onTurnChange, onGameEn
 	const cancelAnimationRef = useRef(0);
 
 	useEffect(() => {
+		unmountedRef.current = false;
+		aiLockRef.current = false;
+		cancelAnimationRef.current = 0;
+
 		return () => {
 			unmountedRef.current = true;
 			aiLockRef.current = false;
